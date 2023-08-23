@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Diagnostics;
 using System.IO;
-using System.Collections;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace ParadoxModInstaller
@@ -16,13 +14,21 @@ namespace ParadoxModInstaller
         static void Main(string[] args)
         {
             List<string> modList = FindNotInstalledMods();
-            InstallMods(modList);
+            try
+            {
+                InstallMods(modList);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                Console.ReadLine();
+            }
 
             Console.WriteLine("Задача выполнена. Бог император защитит.");
             Console.ReadLine();
         }
 
-        static List<string> FindNotInstalledMods() 
+        static List<string> FindNotInstalledMods()
         {
             List<string> folders = Directory.GetDirectories(currentDir).ToList();
             List<string> mods = new List<string>();
@@ -36,11 +42,36 @@ namespace ParadoxModInstaller
             return mods;
         }
 
-        static void InstallMods(List<string> mods) 
+        static void CheckZip(string mod)
+        {
+            Console.WriteLine("Проверка наличия архивов");
+            string archive = File.ReadAllLines(Path.Combine(mod, DESC_FILE)).Where(x => x.Contains("archive=")).FirstOrDefault();
+            if (archive != null)
+            {
+                Console.WriteLine("Обнаружен архив");
+                if (Directory.EnumerateDirectories(mod).Count() == 0)
+                {
+                    Console.WriteLine("Не обнаружены папки мода, распаковка архива...");
+                    archive = archive.Split('=')[1].Trim('"');
+                    Unpack(mod, archive);
+                }
+            }
+            else return;
+        }
+
+        static void Unpack(string mod, string archiveName)
+        {
+            Console.WriteLine("Распаковка архива " + archiveName);
+            System.IO.Compression.ZipFile.ExtractToDirectory(Path.Combine(mod, archiveName), mod);
+            
+        }
+
+        static void InstallMods(List<string> mods)
         {
             for (int i = 0; i < mods.Count; i++)
             {
                 Console.WriteLine("Обнаружен мод для установки - " + mods[i]);
+                CheckZip(mods[i]);
                 Console.WriteLine("Корректировка имени.");
                 mods[i] = CorrectName(mods[i]);
                 Console.WriteLine("Копирование файла описания.");
@@ -59,8 +90,8 @@ namespace ParadoxModInstaller
             string name = file.Where(x => x.StartsWith("name=")).FirstOrDefault();
             name = name.Remove(0, 5);
             name = string.Concat(name.Split(Path.GetInvalidFileNameChars()));
-            
-            if (Regex.IsMatch(name, @"[^\u0000-\u007F]+")) 
+
+            if (Regex.IsMatch(name, @"[^\u0000-\u007F]+"))
             {
                 name = Regex.Replace(name, @"[^\u0000-\u007F]+", string.Empty);
                 name += "Rus";
@@ -68,22 +99,31 @@ namespace ParadoxModInstaller
             string newDir = Path.Combine(currentDir, name);
             if (folderName != name)
             {
-                Directory.Move(mod, newDir);
+                try { Directory.Move(mod, newDir); }
+                catch(Exception ex) 
+                {
+                    Console.WriteLine(mod);
+                    Console.WriteLine("В папке мода есть файлы открытые другим приложением, закройте приложения использующие файлы из папки мода и повторите попытку");
+                    Console.ReadLine();
+                    Environment.Exit(0);
+                }
                 mod = newDir;
             }
             while (!Directory.Exists(newDir)) { continue; };
             return newDir;
         }
 
-        static string CreateModDesc(string mod) 
-        { 
+        static string CreateModDesc(string mod)
+        {
             string folderName = Path.GetFileName(mod.TrimEnd(Path.DirectorySeparatorChar));
             string modDesc = Path.Combine(currentDir, folderName + ".mod");
+            if (File.Exists(Path.Combine(modDesc))) File.Delete(modDesc);
+            Console.WriteLine("Обнаружен существующий файл мода, удаление...");
             File.Copy(Path.Combine(mod, DESC_FILE), modDesc);
             return modDesc;
         }
 
-        static void ModifyModDesc(string mod) 
+        static void ModifyModDesc(string mod)
         {
             string folderName = Path.GetFileName(mod.TrimEnd(Path.DirectorySeparatorChar));
             string modDesc = Path.Combine(currentDir, folderName + ".mod");
